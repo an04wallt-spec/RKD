@@ -1,0 +1,41 @@
+name: Build RKD.Project Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Исходники/**'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build RKD.Project
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process Bypass -Force
+          & '.\Исходники\build.ps1'
+
+      - name: Verify executable
+        shell: powershell
+        run: |
+          $exe = '.\build\RKD.Project.exe'
+          if (!(Test-Path $exe)) { throw 'RKD.Project.exe was not produced' }
+          $v = (Get-Item $exe).VersionInfo.FileVersion
+          Write-Host "Built version: $v"
+          if ($v -notlike '1.4.0*') { throw "Unexpected version: $v" }
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: RKD.Project-v1.4-Windows
+          path: |
+            build/RKD.Project.exe
+            digital-ruble-transparent.png
+            docs/CHANGELOG-v1.4.txt
+          if-no-files-found: error
