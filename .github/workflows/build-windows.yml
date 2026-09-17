@@ -5,7 +5,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'Исходники/**'
+      - '**/*.cs'
+      - '**/build.ps1'
       - '.github/workflows/build-windows.yml'
 
 jobs:
@@ -19,23 +20,30 @@ jobs:
         shell: powershell
         run: |
           Set-ExecutionPolicy -Scope Process Bypass -Force
-          & '.\Исходники\build.ps1'
+          $buildScript = Get-ChildItem -Path . -Filter build.ps1 -File -Recurse | Select-Object -First 1
+          if ($null -eq $buildScript) { throw 'build.ps1 not found' }
+          Write-Host "Using build script: $($buildScript.FullName)"
+          & $buildScript.FullName
 
-      - name: Verify executable
+      - name: Locate and verify executable
         shell: powershell
         run: |
-          $exe = '.\build\RKD.Project.exe'
-          if (!(Test-Path $exe)) { throw 'RKD.Project.exe was not produced' }
-          $v = (Get-Item $exe).VersionInfo.FileVersion
+          $exe = Get-ChildItem -Path . -Filter RKD.Project.exe -File -Recurse |
+            Where-Object { $_.FullName -match '[\\/]build[\\/]' } |
+            Select-Object -First 1
+          if ($null -eq $exe) { throw 'Built RKD.Project.exe was not found' }
+          $v = $exe.VersionInfo.FileVersion
+          Write-Host "Built executable: $($exe.FullName)"
           Write-Host "Built version: $v"
           if ($v -notlike '1.4.0*') { throw "Unexpected version: $v" }
+          Copy-Item $exe.FullName -Destination '.\RKD.Project-v1.4.exe' -Force
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
           name: RKD.Project-v1.4-Windows
           path: |
-            build/RKD.Project.exe
+            RKD.Project-v1.4.exe
             digital-ruble-transparent.png
             docs/CHANGELOG-v1.4.txt
           if-no-files-found: error
