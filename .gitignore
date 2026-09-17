@@ -1,0 +1,12 @@
+# RKD Project — generated/local files
+build/
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.pdb
+*.tmp
+*.log
+Thumbs.db
+Desktop.ini
