@@ -19,7 +19,9 @@ namespace RkdEstimator
                 }
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
-                Application.Run(new MainForm());
+                MainForm mainForm = new MainForm();
+                ProjectOpenShortcut.Attach(mainForm);
+                Application.Run(mainForm);
             }
         }
     }
