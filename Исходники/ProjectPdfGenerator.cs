@@ -16,10 +16,6 @@ namespace RkdEstimator
         private const int DesignHeight = 1754;
         private const int PixelWidth = 2480;
         private const int PixelHeight = 3508;
-
-        // Версия 1.4: страницы формируются по реально занимаемой высоте,
-        // а не по жёсткому количеству строк. Это позволяет обычному КП
-        // (в том числе примерно до 15 изделий) оставаться на одном листе A4.
         private const int TableTop = 252;
         private const int TableHeaderHeight = 38;
         private const int RoomRowHeight = 32;
@@ -34,20 +30,16 @@ namespace RkdEstimator
             if (project == null) throw new ArgumentNullException("project");
             List<ProjectPdfRow> rows = BuildRows(project);
             if (rows.Count == 0) throw new InvalidOperationException("В проекте нет изделий.");
-
             int totalsHeight = GetTotalsHeight(project);
             List<List<ProjectPdfRow>> pageRowsList = Paginate(rows, totalsHeight);
             int pageCount = pageRowsList.Count;
             List<byte[]> pages = new List<byte[]>();
-
             for (int pageIndex = 0; pageIndex < pageCount; pageIndex++)
             {
                 List<ProjectPdfRow> pageRows = pageRowsList[pageIndex];
                 bool isLast = pageIndex == pageCount - 1;
                 using (Bitmap page = RenderPage(project, pageRows, pageIndex + 1, pageCount, isLast, cashlessPercent, roundTo))
-                {
                     pages.Add(LosslessPdfImage.EncodeRgb(page));
-                }
             }
             WritePdf(outputPath, pages, PixelWidth, PixelHeight);
         }
@@ -67,7 +59,7 @@ namespace RkdEstimator
 
         private static int GetTotalsHeight(ProjectDocument project)
         {
-            int lines = 1; // изделия
+            int lines = 1;
             if (project.IncludeMeasurement) lines++;
             if (project.CashlessPayment) lines++;
             return 30 + lines * 34 + 48;
@@ -80,55 +72,49 @@ namespace RkdEstimator
             return ItemRowHeight;
         }
 
+        private static int SumRowHeights(IEnumerable<ProjectPdfRow> rows)
+        {
+            int total = 0;
+            foreach (ProjectPdfRow row in rows) total += GetRowHeight(row);
+            return total;
+        }
+
         private static List<List<ProjectPdfRow>> Paginate(IList<ProjectPdfRow> rows, int totalsHeight)
         {
             List<List<ProjectPdfRow>> pages = new List<List<ProjectPdfRow>>();
             int index = 0;
             int tableStart = TableTop + TableHeaderHeight;
             int normalBottom = FooterTop - BottomSafety;
-
             while (index < rows.Count)
             {
                 List<ProjectPdfRow> page = new List<ProjectPdfRow>();
                 int used = 0;
-
                 if (index > 0 && rows[index].Kind != RowKind.Room)
                 {
                     page.Add(new ProjectPdfRow { Kind = RowKind.Room, Room = rows[index].Room + " (продолжение)" });
                     used += RoomRowHeight;
                 }
-
                 while (index < rows.Count)
                 {
                     int nextHeight = GetRowHeight(rows[index]);
-                    int remainingAfterThis = rows.Skip(index + 1).Sum(GetRowHeight);
+                    int remainingAfterThis = SumRowHeights(rows.Skip(index + 1));
                     bool wouldFinish = index == rows.Count - 1;
                     int bottomLimit = wouldFinish ? normalBottom - TotalsGap - totalsHeight : normalBottom;
-
-                    // Если все оставшиеся строки вместе с итогами помещаются на этот лист,
-                    // оставляем их здесь и не создаём лишнюю страницу.
                     if (!wouldFinish && used + nextHeight + remainingAfterThis + TotalsGap + totalsHeight <= normalBottom - tableStart)
                         bottomLimit = normalBottom - TotalsGap - totalsHeight;
-
-                    if (tableStart + used + nextHeight > bottomLimit && page.Count > 0)
-                        break;
-
+                    if (tableStart + used + nextHeight > bottomLimit && page.Count > 0) break;
                     page.Add(rows[index]);
                     used += nextHeight;
                     index++;
                 }
-
                 pages.Add(page);
             }
-
-            // Последняя проверка: если последняя страница получилась почти пустой,
-            // пробуем перенести её строки на предыдущую, если они реально помещаются.
             if (pages.Count > 1)
             {
                 List<ProjectPdfRow> last = pages[pages.Count - 1];
                 List<ProjectPdfRow> previous = pages[pages.Count - 2];
-                int previousHeight = previous.Sum(GetRowHeight);
-                int lastHeight = last.Sum(GetRowHeight);
+                int previousHeight = SumRowHeights(previous);
+                int lastHeight = SumRowHeights(last);
                 int available = normalBottom - tableStart - TotalsGap - totalsHeight;
                 if (previousHeight + lastHeight <= available)
                 {
@@ -136,7 +122,6 @@ namespace RkdEstimator
                     pages.RemoveAt(pages.Count - 1);
                 }
             }
-
             return pages;
         }
 
@@ -164,18 +149,14 @@ namespace RkdEstimator
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.ScaleTransform(PixelWidth / (float)DesignWidth, PixelHeight / (float)DesignHeight);
-
-                // Компактная шапка: оставляем максимум полезной площади ведомости.
                 g.FillRectangle(blue, 0, 0, DesignWidth, 18);
                 g.DrawString("KB911.ru  КОММЕРЧЕСКОЕ ПРЕДЛОЖЕНИЕ", titleFont, dark, 80, 54);
                 DrawRight(g, "Дата: " + DateTime.Now.ToString("dd.MM.yyyy"), bodyFont, muted, 1160, 59);
-
                 string projectName = string.IsNullOrWhiteSpace(project.Name) ? "Проект РКД" : project.Name.Trim();
                 using (StringFormat sf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap })
                     g.DrawString(projectName, nameFont, dark, new RectangleF(82, 105, 800, 30), sf);
                 g.DrawString("Разработка рабочей конструкторской документации (РКД)", bodyFont, muted, 82, 139);
                 g.DrawLine(line, 80, 181, 1160, 181);
-
                 g.DrawString("СВОДНАЯ ВЕДОМОСТЬ", sectionFont, muted, 82, 211);
                 int y = TableTop;
                 g.FillRectangle(pale, 80, y, 1080, TableHeaderHeight);
@@ -183,7 +164,6 @@ namespace RkdEstimator
                 g.DrawString("ИЗДЕЛИЕ", sectionFont, dark, 398, y + 10);
                 DrawRight(g, "СТОИМОСТЬ РКД", sectionFont, dark, 1138, y + 10);
                 y += TableHeaderHeight;
-
                 foreach (ProjectPdfRow row in rows)
                 {
                     int rowHeight = GetRowHeight(row);
@@ -208,7 +188,6 @@ namespace RkdEstimator
                     }
                     y += rowHeight;
                 }
-
                 if (isLast)
                 {
                     decimal items = project.Rooms.SelectMany(r => r.Items).Sum(i => i.FinalWorkPrice);
@@ -216,35 +195,27 @@ namespace RkdEstimator
                     decimal baseTotal = items + measurement;
                     decimal surcharge = project.CashlessPayment ? baseTotal * cashlessPercent / 100m : 0m;
                     decimal total = PricingCalculator.RoundUp(baseTotal + surcharge, roundTo);
-
                     int totalsHeight = GetTotalsHeight(project);
                     int totalsY = y + TotalsGap;
                     int maxTotalsY = FooterTop - BottomSafety - totalsHeight;
                     totalsY = Math.Min(totalsY, maxTotalsY);
-
-                    // Итоги не прибиваем к низу листа: они следуют сразу за таблицей,
-                    // поэтому короткое КП выглядит собранно, а длинное остаётся компактным.
                     g.FillRectangle(pale, 720, totalsY, 440, totalsHeight);
                     int ty = totalsY + 16;
                     DrawTotalLine(g, "Изделия", FormatMoney(items), bodyFont, dark, 742, 1135, ty); ty += 34;
                     if (project.IncludeMeasurement)
                     {
-                        DrawTotalLine(g, "Выезд и замер", FormatMoney(measurement), bodyFont, dark, 742, 1135, ty);
-                        ty += 34;
+                        DrawTotalLine(g, "Выезд и замер", FormatMoney(measurement), bodyFont, dark, 742, 1135, ty); ty += 34;
                     }
                     if (project.CashlessPayment)
                     {
-                        DrawTotalLine(g, "Безналичная оплата +" + cashlessPercent.ToString("0.#") + "%", FormatMoney(surcharge), bodyFont, dark, 742, 1135, ty);
-                        ty += 34;
+                        DrawTotalLine(g, "Безналичная оплата +" + cashlessPercent.ToString("0.#") + "%", FormatMoney(surcharge), bodyFont, dark, 742, 1135, ty); ty += 34;
                     }
                     g.DrawLine(line, 742, ty, 1135, ty);
                     ty += 12;
                     g.DrawString("ИТОГО", totalFont, dark, 742, ty);
                     DrawRight(g, FormatMoney(total), totalFont, blue, 1135, ty);
                 }
-
-                if (pageCount > 1)
-                    g.DrawString("Страница " + pageNumber + " из " + pageCount, smallFont, muted, 80, FooterTop);
+                if (pageCount > 1) g.DrawString("Страница " + pageNumber + " из " + pageCount, smallFont, muted, 80, FooterTop);
                 DrawRight(g, "KB911.RU  +7 (903) 105-99-11", smallFont, muted, 1160, FooterTop);
             }
             return page;
@@ -281,7 +252,6 @@ namespace RkdEstimator
                 offsets[2] = stream.Position;
                 string kids = string.Join(" ", Enumerable.Range(0, pageImages.Count).Select(i => (3 + i * 3) + " 0 R"));
                 WriteAscii(stream, "2 0 obj\n<< /Type /Pages /Kids [" + kids + "] /Count " + pageImages.Count + " >>\nendobj\n");
-
                 for (int i = 0; i < pageImages.Count; i++)
                 {
                     int pageObject = 3 + i * 3;
@@ -298,7 +268,6 @@ namespace RkdEstimator
                     WriteAscii(stream, imageObject + " 0 obj\n<< /Type /XObject /Subtype /Image /Width " + pixelWidth + " /Height " + pixelHeight + " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length " + imageData.Length + " >>\nstream\n");
                     stream.Write(imageData, 0, imageData.Length); WriteAscii(stream, "\nendstream\nendobj\n");
                 }
-
                 long xref = stream.Position;
                 WriteAscii(stream, "xref\n0 " + (objectCount + 1) + "\n0000000000 65535 f \n");
                 for (int i = 1; i <= objectCount; i++) WriteAscii(stream, offsets[i].ToString("0000000000", CultureInfo.InvariantCulture) + " 00000 n \n");
