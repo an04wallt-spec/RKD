@@ -19,8 +19,10 @@ namespace RkdEstimator
             if (settingsButton == null) return;
 
             host.Width = 418;
+
             projectButton.Location = new Point(10, 16);
             projectButton.Width = 126;
+            projectButton.Visible = true;
 
             Button openButton = new Button
             {
@@ -40,7 +42,12 @@ namespace RkdEstimator
 
             settingsButton.Location = new Point(282, 16);
             host.Controls.Add(openButton);
+
+            // Docked header controls can overlap when the host grows. Keep all three
+            // actions explicitly on top and in their intended left-to-right order.
+            settingsButton.BringToFront();
             openButton.BringToFront();
+            projectButton.BringToFront();
         }
 
         private static void OpenSavedProject(MainForm owner)
