@@ -1,0 +1,36 @@
+// Небольшой автономный тест расчётного ядра. Расширение .txt не включает файл в приложение.
+// Команды запуска приведены в README для разработчика.
+using System;
+using RkdEstimator;
+
+internal static class CalculatorTests
+{
+    private static void AssertEqual(decimal expected, decimal actual, string name)
+    {
+        if (expected != actual) throw new Exception(name + ": ожидалось " + expected + ", получено " + actual);
+    }
+
+    public static void Main()
+    {
+        AssertEqual(0.80m, PricingCalculator.GetSizeCoefficient(800m, 900m, 500m), "нижняя граница габарита");
+        AssertEqual(2.50m, PricingCalculator.GetSizeCoefficient(4000m, 3000m, 1000m), "верхняя граница габарита");
+        PriceResult basic = PricingCalculator.Calculate(2000m, 2200m, 600m, 5000m, 7000m, 500m, new decimal[0]);
+        AssertEqual(8000m, basic.CalculatedPrice, "базовый расчёт");
+        AssertEqual(8000m, basic.RecommendedPrice, "округлённая рекомендация");
+        PriceResult minimum = PricingCalculator.Calculate(500m, 500m, 300m, 5000m, 7000m, 500m, new decimal[0]);
+        AssertEqual(7000m, minimum.RecommendedPrice, "минимальная цена");
+        PriceResult complex = PricingCalculator.Calculate(2000m, 2200m, 600m, 5000m, 7000m, 500m, new[] { 15m, 12m });
+        AssertEqual(10160m, complex.CalculatedPrice, "усложнения");
+        AssertEqual(10500m, complex.RecommendedPrice, "округление вверх");
+        PriceResult cashless = PricingCalculator.Calculate(2000m, 2200m, 600m, 5000m, 7000m, 500m, new decimal[0], 7m);
+        AssertEqual(8560m, cashless.CalculatedPrice, "безналичная оплата");
+        AssertEqual(560m, cashless.SurchargeAmount, "сумма налога");
+        AssertEqual(9000m, cashless.RecommendedPrice, "безнал и округление");
+        PriceResult measurement = PricingCalculator.Calculate(2000m, 2200m, 600m, 5000m, 7000m, 500m, new decimal[0], 0m, 5000m);
+        AssertEqual(8000m, measurement.WorkRecommendedPrice, "стоимость РКД отдельно");
+        AssertEqual(5000m, measurement.MeasurementAmount, "стоимость замера отдельно");
+        AssertEqual(13000m, measurement.RecommendedPrice, "РКД плюс замер");
+        AssertEqual(50m, AppSettings.CreateDefault().Options.Count, "полный перечень коэффициентов");
+        Console.WriteLine("Все тесты расчёта пройдены.");
+    }
+}
